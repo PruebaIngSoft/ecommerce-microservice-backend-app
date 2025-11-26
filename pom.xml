@@ -118,6 +118,49 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.0.0-M5</version>
+				<configuration>
+					<!-- Recomendado para Java 11+ con JUnit 5 -->
+					<useModulePath>false</useModulePath>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.7</version>
+
+				<executions>
+					<!-- Activa el agente de JaCoCo al ejecutar los tests -->
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+
+					<!-- Genera los reportes después de `test` -->
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+						<configuration>
+							<!-- Archivo de datos de cobertura -->
+							<dataFile>${project.build.directory}/jacoco.exec</dataFile>
+							<!-- Carpeta de salida: target/site/jacoco -->
+							<outputDirectory>${project.reporting.outputDirectory}/jacoco</outputDirectory>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 		<finalName>${project.artifactId}-v${project.version}</finalName>
 	</build>
