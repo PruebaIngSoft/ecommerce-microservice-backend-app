@@ -23,16 +23,14 @@ spec:
         env:
         - name: JAVA_OPTS
           value: "-Xmx300m -Xms200m"
-        - name: SPRING_PROFILES_ACTIVE
-          value: "dev"
         - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
           value: "http://service-discovery:8761/eureka/"
         - name: SPRING_DATASOURCE_PLATFORM
           value: "h2"
-        - name: SPRING_DATASOURCE_URL
-          value: "jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1"
         - name: SPRING_DATASOURCE_DRIVER_CLASS_NAME
           value: "org.h2.Driver"
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"
         - name: SPRING_DATASOURCE_USERNAME
           value: "sa"
         - name: SPRING_DATASOURCE_PASSWORD
