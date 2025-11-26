@@ -29,6 +29,8 @@ spec:
           value: "http://cloud-config:9296"
         - name: EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE
           value: "http://service-discovery:8761/eureka/"
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "true"
         resources:
           requests:
             memory: "256Mi"
