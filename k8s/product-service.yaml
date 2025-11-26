@@ -27,17 +27,16 @@ spec:
           value: "dev"
         - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
           value: "http://service-discovery:8761/eureka/"
+        - name: SPRING_DATASOURCE_PLATFORM
+          value: "h2"
         - name: SPRING_DATASOURCE_URL
-          value: "jdbc:sqlserver://${SQL_HOST}:1433;database=${SQL_DATABASE};encrypt=true;trustServerCertificate=true"
-        - name: SPRING_DATASOURCE_USERNAME
-          value: "sqladmin"
-        - name: SPRING_DATASOURCE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: sql-secret
-              key: password
+          value: "jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1"
         - name: SPRING_DATASOURCE_DRIVER_CLASS_NAME
-          value: "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+          value: "org.h2.Driver"
+        - name: SPRING_DATASOURCE_USERNAME
+          value: "sa"
+        - name: SPRING_DATASOURCE_PASSWORD
+          value: ""
         resources:
           requests:
             memory: "256Mi"
