@@ -25,10 +25,8 @@ spec:
           value: "-Xmx300m -Xms200m"
         - name: SPRING_CLOUD_CONFIG_URI
           value: "http://cloud-config:9296"
-        - name: EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE
-          value: "http://service-discovery:8761/eureka/"
-        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
-          value: "true"
+        - name: SPRING_APPLICATION_JSON
+          value: '{"eureka": {"client": {"serviceUrl": {"defaultZone": "http://service-discovery:8761/eureka/"}, "registerWithEureka": true, "fetchRegistry": true}, "instance": {"preferIpAddress": true}}}'
         - name: SPRING_DATASOURCE_PLATFORM
           value: "h2"
         - name: SPRING_DATASOURCE_DRIVER_CLASS_NAME
