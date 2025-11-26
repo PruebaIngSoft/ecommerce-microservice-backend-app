@@ -68,7 +68,7 @@ jobs:
 
     - name: Build and push Docker images
       run: |
-        SERVICES="service-discovery api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
+        SERVICES="service-discovery cloud-config api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
         for service in $SERVICES; do
           echo "Building and pushing $service..."
           docker build -f ./$service/Dockerfile -t ${{ secrets.ACR_LOGIN_SERVER }}/$service:${{ github.sha }} .
@@ -122,12 +122,24 @@ jobs:
         envsubst < k8s/service-discovery.yaml | kubectl apply -f -
         kubectl rollout status deployment/service-discovery --timeout=600s
 
-    - name: Wait for Eureka to be ready
+    - name: Deploy Phase 2 - Cloud Config Server
       run: |
-        echo "Waiting 80 seconds for Eureka service discovery to fully start..."
-        sleep 80
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        envsubst < k8s/cloud-config.yaml | kubectl apply -f -
+        kubectl rollout status deployment/cloud-config --timeout=600s
 
-    - name: Deploy Phase 2 - API Gateway and Product Service
+    - name: Deploy Phase 3 - Zipkin
+      run: |
+        kubectl apply -f k8s/zipkin.yaml
+        kubectl rollout status deployment/zipkin --timeout=300s
+
+    - name: Wait for infrastructure services to be ready
+      run: |
+        echo "Waiting 120 seconds for all infrastructure services to fully start..."
+        sleep 120
+
+    - name: Deploy Phase 4 - API Gateway and Product Service
       run: |
         export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
         export TAG="${{ env.IMAGE_TAG }}"
@@ -138,7 +150,7 @@ jobs:
         kubectl rollout status deployment/api-gateway --timeout=600s
         kubectl rollout status deployment/product-service --timeout=600s
 
-    - name: Deploy Phase 3 - Remaining Services
+    - name: Deploy Phase 5 - Remaining Services
       run: |
         export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
         export TAG="${{ env.IMAGE_TAG }}"
