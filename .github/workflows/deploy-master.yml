@@ -71,7 +71,7 @@ jobs:
         SERVICES="service-discovery api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
         for service in $SERVICES; do
           echo "Building and pushing $service..."
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/$service:${{ github.sha }} ./$service
+          docker build -f ./$service/Dockerfile -t ${{ secrets.ACR_LOGIN_SERVER }}/$service:${{ github.sha }} .
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/$service:${{ github.sha }}
           echo "Successfully pushed $service"
         done
