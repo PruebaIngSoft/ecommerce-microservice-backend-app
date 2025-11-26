@@ -27,6 +27,8 @@ spec:
           value: "false"
         - name: SPRING_CLOUD_CONFIG_IMPORT_CHECK_ENABLED
           value: "false"
+        - name: SPRING_CONFIG_IMPORT
+          value: "optional:"
         - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
           value: "http://service-discovery:8761/eureka/"
         - name: SPRING_DATASOURCE_PLATFORM
