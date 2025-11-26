@@ -25,7 +25,7 @@ spec:
           value: "-Xmx300m -Xms200m"
         - name: SPRING_CLOUD_CONFIG_URI
           value: "http://cloud-config:9296"
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+        - name: EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE
           value: "http://service-discovery:8761/eureka/"
         - name: SPRING_DATASOURCE_PLATFORM
           value: "h2"
