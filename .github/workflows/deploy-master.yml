@@ -120,7 +120,7 @@ jobs:
         export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
         export TAG="${{ env.IMAGE_TAG }}"
         envsubst < k8s/service-discovery.yaml | kubectl apply -f -
-        kubectl rollout status deployment/service-discovery --timeout=300s
+        kubectl rollout status deployment/service-discovery --timeout=600s
 
     - name: Wait for Eureka to be ready
       run: |
