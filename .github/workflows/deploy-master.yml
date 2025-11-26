@@ -1,0 +1,227 @@
+name: CI/CD Pipeline - Build and Deploy to AKS
+
+on:
+  push:
+    branches:
+      - dev
+      - feature/cicd-pipeline
+
+env:
+  JAVA_VERSION: '11'
+  MAVEN_VERSION: '3.8.6'
+  REGISTRY_NAME: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-ci:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Build with Maven
+      run: |
+        mvn clean package -DskipTests -B
+      continue-on-error: false
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Generate version tag
+      id: version
+      run: |
+        VERSION_TAG="${IMAGE_TAG:0:7}"
+        echo "VERSION=$VERSION_TAG" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION_TAG"
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: jar-artifacts
+        path: |
+          **/target/*.jar
+        retention-days: 7
+
+    - name: Set output for next job
+      id: version_output
+      run: |
+        echo "tag=${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+
+  docker-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: build-ci
+    strategy:
+      matrix:
+        service:
+          - service-discovery
+          - api-gateway
+          - product-service
+          - user-service
+          - order-service
+          - payment-service
+          - shipping-service
+          - favourite-service
+          - proxy-client
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Build with Maven
+      run: |
+        mvn clean package -DskipTests -B
+      continue-on-error: false
+
+    - name: Log in to Azure Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY_NAME }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./${{ matrix.service }}
+        push: true
+        tags: |
+          ${{ env.REGISTRY_NAME }}/${{ matrix.service }}:${{ env.IMAGE_TAG }}
+          ${{ env.REGISTRY_NAME }}/${{ matrix.service }}:latest
+        cache-from: type=registry,ref=${{ env.REGISTRY_NAME }}/${{ matrix.service }}:buildcache
+        cache-to: type=registry,ref=${{ env.REGISTRY_NAME }}/${{ matrix.service }}:buildcache,mode=max
+
+  deploy-k8s:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [build-ci, docker-push]
+    environment:
+      name: production
+      url: ${{ steps.get-lb-url.outputs.url }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set Azure subscription
+      run: |
+        az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Get AKS credentials
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+          --name ${{ secrets.AKS_CLUSTER_NAME }} \
+          --overwrite-existing
+
+    - name: Install envsubst
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gettext-base
+
+    - name: Create SQL secret
+      run: |
+        kubectl create secret generic sql-secret \
+          --from-literal=password="${{ secrets.SQL_PASSWORD }}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy Phase 1 - Service Discovery
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        envsubst < k8s/service-discovery.yaml | kubectl apply -f -
+        kubectl rollout status deployment/service-discovery --timeout=300s
+
+    - name: Wait for Eureka to be ready
+      run: |
+        echo "Waiting 80 seconds for Eureka service discovery to fully start..."
+        sleep 80
+        kubectl get pods -l app=service-discovery
+        kubectl logs -l app=service-discovery --tail=50
+
+    - name: Deploy Phase 2 - API Gateway and Product Service
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        export SQL_HOST="${{ secrets.SQL_HOST }}"
+        export SQL_DATABASE="${{ secrets.SQL_DATABASE }}"
+        envsubst < k8s/api-gateway.yaml | kubectl apply -f -
+        envsubst < k8s/product-service.yaml | kubectl apply -f -
+        kubectl rollout status deployment/api-gateway --timeout=300s
+        kubectl rollout status deployment/product-service --timeout=300s
+
+    - name: Deploy Phase 3 - Remaining Services
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        envsubst < k8s/user-service.yaml | kubectl apply -f -
+        envsubst < k8s/order-service.yaml | kubectl apply -f -
+        envsubst < k8s/payment-service.yaml | kubectl apply -f -
+        envsubst < k8s/shipping-service.yaml | kubectl apply -f -
+        envsubst < k8s/favourite-service.yaml | kubectl apply -f -
+        envsubst < k8s/proxy-client.yaml | kubectl apply -f -
+        kubectl rollout status deployment/user-service --timeout=300s
+        kubectl rollout status deployment/order-service --timeout=300s
+        kubectl rollout status deployment/payment-service --timeout=300s
+        kubectl rollout status deployment/shipping-service --timeout=300s
+        kubectl rollout status deployment/favourite-service --timeout=300s
+        kubectl rollout status deployment/proxy-client --timeout=300s
+
+    - name: Get LoadBalancer URL
+      id: get-lb-url
+      run: |
+        sleep 30
+        LB_IP=$(kubectl get service api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
+        if [ -z "$LB_IP" ]; then
+          LB_HOSTNAME=$(kubectl get service api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "")
+          if [ -n "$LB_HOSTNAME" ]; then
+            echo "url=http://$LB_HOSTNAME:8080" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "url=http://$LB_IP:8080" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Display deployment status
+      run: |
+        echo "=== Deployment Status ==="
+        kubectl get deployments
+        echo ""
+        echo "=== Service Status ==="
+        kubectl get services
+        echo ""
+        echo "=== Pod Status ==="
+        kubectl get pods
+
