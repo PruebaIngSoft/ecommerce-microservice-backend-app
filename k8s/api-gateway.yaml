@@ -25,6 +25,8 @@ spec:
           value: "-Xmx300m -Xms200m"
         - name: SPRING_PROFILES_ACTIVE
           value: "dev"
+        - name: SPRING_CLOUD_CONFIG_ENABLED
+          value: "false"
         - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
           value: "http://service-discovery:8761/eureka/"
         resources:
