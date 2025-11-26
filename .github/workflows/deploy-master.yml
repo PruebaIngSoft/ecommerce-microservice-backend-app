@@ -135,8 +135,8 @@ jobs:
         export SQL_DATABASE="${{ secrets.SQL_DATABASE }}"
         envsubst < k8s/api-gateway.yaml | kubectl apply -f -
         envsubst < k8s/product-service.yaml | kubectl apply -f -
-        kubectl rollout status deployment/api-gateway --timeout=300s
-        kubectl rollout status deployment/product-service --timeout=300s
+        kubectl rollout status deployment/api-gateway --timeout=600s
+        kubectl rollout status deployment/product-service --timeout=600s
 
     - name: Deploy Phase 3 - Remaining Services
       run: |
@@ -148,12 +148,12 @@ jobs:
         envsubst < k8s/shipping-service.yaml | kubectl apply -f -
         envsubst < k8s/favourite-service.yaml | kubectl apply -f -
         envsubst < k8s/proxy-client.yaml | kubectl apply -f -
-        kubectl rollout status deployment/user-service --timeout=300s
-        kubectl rollout status deployment/order-service --timeout=300s
-        kubectl rollout status deployment/payment-service --timeout=300s
-        kubectl rollout status deployment/shipping-service --timeout=300s
-        kubectl rollout status deployment/favourite-service --timeout=300s
-        kubectl rollout status deployment/proxy-client --timeout=300s
+        kubectl rollout status deployment/user-service --timeout=600s
+        kubectl rollout status deployment/order-service --timeout=600s
+        kubectl rollout status deployment/payment-service --timeout=600s
+        kubectl rollout status deployment/shipping-service --timeout=600s
+        kubectl rollout status deployment/favourite-service --timeout=600s
+        kubectl rollout status deployment/proxy-client --timeout=600s
 
     - name: Get LoadBalancer URL
       id: get-lb-url
