@@ -126,8 +126,6 @@ jobs:
       run: |
         echo "Waiting 80 seconds for Eureka service discovery to fully start..."
         sleep 80
-        kubectl get pods -l app=service-discovery
-        kubectl logs -l app=service-discovery --tail=50
 
     - name: Deploy Phase 2 - API Gateway and Product Service
       run: |
