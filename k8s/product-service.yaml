@@ -18,7 +18,7 @@ spec:
       - name: product-service
         image: ${ACR_LOGIN_SERVER}/product-service:${TAG}
         ports:
-        - containerPort: 80
+        - containerPort: 8500
           name: http
         env:
         - name: JAVA_OPTS
@@ -43,17 +43,15 @@ spec:
             memory: "512Mi"
             cpu: "500m"
         livenessProbe:
-          httpGet:
-            path: /actuator/health
-            port: 80
+          tcpSocket:
+            port: 8500
           initialDelaySeconds: 180
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 5
         readinessProbe:
-          httpGet:
-            path: /actuator/health
-            port: 80
+          tcpSocket:
+            port: 8500
           initialDelaySeconds: 180
           periodSeconds: 20
           timeoutSeconds: 5
@@ -68,8 +66,8 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 80
-    targetPort: 80
+  - port: 8500
+    targetPort: 8500
     protocol: TCP
     name: http
   selector:
