@@ -1,0 +1,193 @@
+name: CI/CD Pipeline - Build and Deploy to AKS
+
+on:
+  push:
+    branches:
+      - dev
+      - feature/cicd-pipeline
+
+env:
+  JAVA_VERSION: '11'
+  MAVEN_VERSION: '3.8.6'
+  REGISTRY_NAME: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_TAG: ${{ github.sha }}
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+  actions: read
+
+jobs:
+  build-and-push-images:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Build with Maven
+      run: |
+        mvn clean package -DskipTests -B
+      continue-on-error: false
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+        exit-code: '0'
+
+    # - name: Upload Trivy results to GitHub Security
+    #   uses: github/codeql-action/upload-sarif@v3
+    #   if: always()
+    #   with:
+    #     sarif_file: 'trivy-results.sarif'
+    #   Note: Commented out - requires GitHub Advanced Security to be enabled
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Azure Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY_NAME }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Build and push Docker images
+      run: |
+        SERVICES="service-discovery cloud-config api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
+        for service in $SERVICES; do
+          echo "Building and pushing $service..."
+          docker build -f ./$service/Dockerfile -t ${{ secrets.ACR_LOGIN_SERVER }}/$service:${{ github.sha }} .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/$service:${{ github.sha }}
+          echo "Successfully pushed $service"
+        done
+
+  deploy-k8s:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build-and-push-images
+    environment:
+      name: production
+      url: ${{ steps.get-lb-url.outputs.url }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set Azure subscription
+      run: |
+        az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Get AKS credentials
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+          --name ${{ secrets.AKS_CLUSTER_NAME }} \
+          --overwrite-existing
+
+    - name: Install envsubst
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gettext-base
+
+    - name: Create SQL secret
+      run: |
+        kubectl create secret generic sql-secret \
+          --from-literal=password="${{ secrets.SQL_PASSWORD }}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy Phase 1 - Service Discovery
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        envsubst < k8s/service-discovery.yaml | kubectl apply -f -
+        kubectl rollout status deployment/service-discovery --timeout=600s
+
+    - name: Deploy Phase 2 - Cloud Config Server
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        envsubst < k8s/cloud-config.yaml | kubectl apply -f -
+        kubectl rollout status deployment/cloud-config --timeout=600s
+
+    - name: Deploy Phase 3 - Zipkin
+      run: |
+        kubectl apply -f k8s/zipkin.yaml
+        kubectl rollout status deployment/zipkin --timeout=300s
+
+    - name: Wait for infrastructure services to be ready
+      run: |
+        echo "Waiting 120 seconds for all infrastructure services to fully start..."
+        sleep 120
+
+    - name: Deploy Phase 4 - API Gateway and Product Service
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        export SQL_HOST="${{ secrets.SQL_HOST }}"
+        export SQL_DATABASE="${{ secrets.SQL_DATABASE }}"
+        envsubst < k8s/api-gateway.yaml | kubectl apply -f -
+        envsubst < k8s/product-service.yaml | kubectl apply -f -
+        kubectl rollout status deployment/api-gateway --timeout=600s
+        kubectl rollout status deployment/product-service --timeout=600s
+
+    - name: Deploy Phase 5 - Remaining Services
+      run: |
+        export ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+        export TAG="${{ env.IMAGE_TAG }}"
+        envsubst < k8s/user-service.yaml | kubectl apply -f -
+        envsubst < k8s/order-service.yaml | kubectl apply -f -
+        envsubst < k8s/payment-service.yaml | kubectl apply -f -
+        envsubst < k8s/shipping-service.yaml | kubectl apply -f -
+        envsubst < k8s/favourite-service.yaml | kubectl apply -f -
+        envsubst < k8s/proxy-client.yaml | kubectl apply -f -
+        kubectl rollout status deployment/user-service --timeout=600s
+        kubectl rollout status deployment/order-service --timeout=600s
+        kubectl rollout status deployment/payment-service --timeout=600s
+        kubectl rollout status deployment/shipping-service --timeout=600s
+        kubectl rollout status deployment/favourite-service --timeout=600s
+        kubectl rollout status deployment/proxy-client --timeout=600s
+
+    - name: Get LoadBalancer URL
+      id: get-lb-url
+      run: |
+        sleep 30
+        LB_IP=$(kubectl get service api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
+        if [ -z "$LB_IP" ]; then
+          LB_HOSTNAME=$(kubectl get service api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "")
+          if [ -n "$LB_HOSTNAME" ]; then
+            echo "url=http://$LB_HOSTNAME:8080" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "url=http://$LB_IP:8080" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Display deployment status
+      run: |
+        echo "=== Deployment Status ==="
+        kubectl get deployments
+        echo ""
+        echo "=== Service Status ==="
+        kubectl get services
+        echo ""
+        echo "=== Pod Status ==="
+        kubectl get pods
