@@ -218,6 +218,10 @@
 						<configuration>
 							<includes>
 								<include>**/SystemIntegrationTest.java</include>
+								<include>**/UserServiceE2ETest.java</include>
+								<include>**/PaymentServiceE2ETest.java</include>
+								<include>**/FavouriteServiceE2ETest.java</include>
+								<include>**/ShippingServiceE2ETest.java</include>
 							</includes>
 						</configuration>
 					</plugin>
