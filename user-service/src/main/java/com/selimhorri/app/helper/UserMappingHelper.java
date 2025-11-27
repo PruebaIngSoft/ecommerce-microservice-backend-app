@@ -30,25 +30,32 @@ public interface UserMappingHelper {
 	}
 	
 	public static User map(final UserDto userDto) {
-		return User.builder()
+		User user = User.builder()
 				.userId(userDto.getUserId())
 				.firstName(userDto.getFirstName())
 				.lastName(userDto.getLastName())
 				.imageUrl(userDto.getImageUrl())
 				.email(userDto.getEmail())
 				.phone(userDto.getPhone())
-				.credential(
-						Credential.builder()
-							.credentialId(userDto.getCredentialDto().getCredentialId())
-							.username(userDto.getCredentialDto().getUsername())
-							.password(userDto.getCredentialDto().getPassword())
-							.roleBasedAuthority(userDto.getCredentialDto().getRoleBasedAuthority())
-							.isEnabled(userDto.getCredentialDto().getIsEnabled())
-							.isAccountNonExpired(userDto.getCredentialDto().getIsAccountNonExpired())
-							.isAccountNonLocked(userDto.getCredentialDto().getIsAccountNonLocked())
-							.isCredentialsNonExpired(userDto.getCredentialDto().getIsCredentialsNonExpired())
-							.build())
 				.build();
+		
+		if (userDto.getCredentialDto() != null) {
+			Credential credential = Credential.builder()
+					.credentialId(userDto.getCredentialDto().getCredentialId())
+					.username(userDto.getCredentialDto().getUsername())
+					.password(userDto.getCredentialDto().getPassword())
+					.roleBasedAuthority(userDto.getCredentialDto().getRoleBasedAuthority())
+					.isEnabled(userDto.getCredentialDto().getIsEnabled())
+					.isAccountNonExpired(userDto.getCredentialDto().getIsAccountNonExpired())
+					.isAccountNonLocked(userDto.getCredentialDto().getIsAccountNonLocked())
+					.isCredentialsNonExpired(userDto.getCredentialDto().getIsCredentialsNonExpired())
+					.build();
+			
+			credential.setUser(user);
+			user.setCredential(credential);
+		}
+		
+		return user;
 	}
 	
 	
