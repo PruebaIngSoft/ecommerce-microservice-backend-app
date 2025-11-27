@@ -37,7 +37,7 @@ jobs:
     - name: Build with Maven (Unit & Component Tests)
       run: |
         # Ejecuta todos los tests EXCEPTO los del paquete e2e
-        mvn clean package -Dtest="!**/e2e/**" -B
+        mvn clean package -Dtest="!**/e2e/**" -DfailIfNoTests=false -B
       continue-on-error: false
 
     - name: Run Trivy vulnerability scanner
