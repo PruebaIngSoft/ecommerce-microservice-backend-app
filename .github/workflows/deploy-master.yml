@@ -150,8 +150,8 @@ jobs:
         export SQL_DATABASE="${{ secrets.SQL_DATABASE }}"
         envsubst < k8s/api-gateway.yaml | kubectl apply -f -
         envsubst < k8s/product-service.yaml | kubectl apply -f -
-        kubectl rollout status deployment/api-gateway --timeout=600s
-        kubectl rollout status deployment/product-service --timeout=600s
+        kubectl rollout status deployment/api-gateway --timeout=1000s
+        kubectl rollout status deployment/product-service --timeout=1000s
 
     - name: Deploy Phase 5 - Remaining Services
       run: |
