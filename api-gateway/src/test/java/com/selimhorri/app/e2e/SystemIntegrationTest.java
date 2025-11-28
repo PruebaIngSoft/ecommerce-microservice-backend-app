@@ -6,6 +6,8 @@ import io.restassured.response.Response;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +20,7 @@ class SystemIntegrationTest {
 
 	private static final String USERNAME_PREFIX = "e2e-gateway-user-";
 	private static final String ORDER_DESC_TEMPLATE = "E2E order for product %d";
+	private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
 
 	@BeforeAll
 	static void configureGatewayUrl() {
@@ -227,6 +230,7 @@ class SystemIntegrationTest {
 		orderPayload.put("cart", cartPayload);
 		orderPayload.put("orderDesc", orderDesc);
 		orderPayload.put("orderFee", 1.0);
+		orderPayload.put("orderDate", LocalDateTime.now().format(DATE_FORMATTER));
 
 		Response response = RestAssured
 				.given()
