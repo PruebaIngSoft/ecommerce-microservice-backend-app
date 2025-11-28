@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,8 @@ class SystemIntegrationTest {
 
 	private static final String USERNAME_PREFIX = "e2e-gateway-user-";
 	private static final String ORDER_DESC_TEMPLATE = "E2E order for product %d";
-	private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
+	// Formato corregido para coincidir con AppConstant.LOCAL_DATE_TIME_FORMAT
+	private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MM-yyyy__HH:mm:ss:SSSSSS");
 
 	@BeforeAll
 	static void configureGatewayUrl() {
@@ -226,11 +228,16 @@ class SystemIntegrationTest {
 		cartPayload.put("cartId", cartId);
 		cartPayload.put("userId", userId);
 
+		// Truncar a microsegundos para evitar problemas de precisión de nanosegundos
+		LocalDateTime orderDateTime = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+
 		Map<String, Object> orderPayload = new HashMap<>();
 		orderPayload.put("cart", cartPayload);
 		orderPayload.put("orderDesc", orderDesc);
 		orderPayload.put("orderFee", 1.0);
-		orderPayload.put("orderDate", LocalDateTime.now().format(DATE_FORMATTER));
+		orderPayload.put("orderDate", orderDateTime.format(DATE_FORMATTER));
+
+		System.out.println("=== Creating order with date: " + orderDateTime.format(DATE_FORMATTER));
 
 		Response response = RestAssured
 				.given()
@@ -247,6 +254,9 @@ class SystemIntegrationTest {
 
 		Integer orderId = response.path("orderId");
 		assertNotNull(orderId, "El orderId de la creación no debe ser nulo");
+
+		System.out.println("=== Order created successfully with ID: " + orderId);
+
 		return orderId;
 	}
 }
