@@ -104,34 +104,40 @@ jobs:
           kubectl apply -f k8s/namespaces.yaml
           kubectl get namespace ${{ env.NAMESPACE }}
 
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
       - name: Deploy services to DEV namespace
         run: |
-          # Actualizar imagen tags en manifiestos
-          TAG="${{ github.sha }}"
+          # Variables para sustituir en manifiestos
+          export ACR_LOGIN_SERVER="${{ env.REGISTRY_NAME }}"
+          export TAG="${{ github.sha }}"
           
           # Deploy en orden de dependencias
           echo "Deploying infrastructure services..."
           kubectl apply -f k8s/zipkin.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/service-discovery.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/service-discovery.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           
           echo "Waiting for service-discovery..."
           kubectl rollout status deployment/service-discovery -n ${{ env.NAMESPACE }} --timeout=120s || true
           
           echo "Deploying cloud-config..."
-          kubectl apply -f k8s/cloud-config.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/cloud-config.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           kubectl rollout status deployment/cloud-config -n ${{ env.NAMESPACE }} --timeout=120s || true
           
           echo "Deploying application services..."
-          kubectl apply -f k8s/product-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/user-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/order-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/payment-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/shipping-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/favourite-service.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/product-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/user-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/order-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/payment-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/shipping-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/favourite-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           
           echo "Deploying gateway and proxy..."
-          kubectl apply -f k8s/api-gateway.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/proxy-client.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/api-gateway.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/proxy-client.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
 
       - name: Wait for deployments
         run: |
