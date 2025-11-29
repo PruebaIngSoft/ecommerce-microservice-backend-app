@@ -10,7 +10,6 @@
 # 4. Ejecutar tests E2E
 #
 # NOTA: Este ambiente es para integración y pruebas antes de producción
-
 name: Deploy to DEV
 
 on:
