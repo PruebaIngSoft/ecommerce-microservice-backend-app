@@ -37,6 +37,14 @@ spec:
           value: "sa"
         - name: SPRING_DATASOURCE_PASSWORD
           value: ""
+        - name: SPRING_FLYWAY_ENABLED
+          value: "false"
+        - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+          value: "create"
+        - name: SPRING_JPA_DEFER_DATASOURCE_INITIALIZATION
+          value: "true"
+        - name: SPRING_SQL_INIT_MODE
+          value: "always"
         resources:
           requests:
             memory: "256Mi"

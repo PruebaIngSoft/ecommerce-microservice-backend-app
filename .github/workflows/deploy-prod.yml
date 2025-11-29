@@ -1,0 +1,201 @@
+# Pipeline de Deploy a PRODUCCIÓN
+#
+# PROPÓSITO: Desplegar a ambiente de producción (namespace: prod)
+# SE EJECUTA: Solo cuando hay push a la rama 'main'
+#
+# CARACTERÍSTICAS:
+# - Requiere aprobación manual (configurar en GitHub Environments)
+# - Tag de imágenes: SHA del commit + "latest"
+# - Estrategia de rollout gradual
+#
+# CONFIGURACIÓN REQUERIDA EN GITHUB:
+# 1. Settings → Environments → New environment → "production"
+# 2. Agregar "Required reviewers" 
+# 3. Opcional: Agregar "Wait timer" de algunos minutos
+
+name: Deploy to PRODUCTION
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+env:
+  JAVA_VERSION: '11'
+  REGISTRY_NAME: ${{ secrets.ACR_LOGIN_SERVER }}
+  RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+  NAMESPACE: prod
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests -B
+
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker images
+        run: |
+          TAG="${{ github.sha }}"
+          TAG_LATEST="latest"
+          
+          SERVICES="service-discovery cloud-config api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
+          
+          for service in $SERVICES; do
+            echo "========================================="
+            echo "Building and pushing: $service"
+            echo "========================================="
+            
+            docker build -f ./$service/Dockerfile -t ${{ env.REGISTRY_NAME }}/$service:$TAG .
+            docker tag ${{ env.REGISTRY_NAME }}/$service:$TAG ${{ env.REGISTRY_NAME }}/$service:$TAG_LATEST
+            
+            docker push ${{ env.REGISTRY_NAME }}/$service:$TAG
+            docker push ${{ env.REGISTRY_NAME }}/$service:$TAG_LATEST
+            
+            echo "✓ $service pushed with tags: $TAG, $TAG_LATEST"
+          done
+
+  # REQUIERE APROBACIÓN MANUAL
+  deploy:
+    name: Deploy to PRODUCTION (requires approval)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production  # <- Esto requiere configurar GitHub Environment
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl apply -f k8s/namespaces.yaml
+          kubectl get namespace ${{ env.NAMESPACE }}
+
+      - name: Pre-deployment backup
+        run: |
+          echo "Creating backup of current prod state..."
+          kubectl get all -n ${{ env.NAMESPACE }} -o yaml > prod-backup-${{ github.sha }}.yaml || true
+          echo "Backup created (if namespace existed)"
+
+      - name: Deploy services to PRODUCTION namespace
+        run: |
+          # Deploy en orden de dependencias
+          echo "========================================="
+          echo "DEPLOYING TO PRODUCTION"
+          echo "========================================="
+          
+          echo "Step 1: Infrastructure services..."
+          kubectl apply -f k8s/zipkin.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/service-discovery.yaml -n ${{ env.NAMESPACE }}
+          
+          echo "Waiting for service-discovery..."
+          kubectl rollout status deployment/service-discovery -n ${{ env.NAMESPACE }} --timeout=180s
+          
+          echo "Step 2: Configuration service..."
+          kubectl apply -f k8s/cloud-config.yaml -n ${{ env.NAMESPACE }}
+          kubectl rollout status deployment/cloud-config -n ${{ env.NAMESPACE }} --timeout=180s
+          
+          echo "Step 3: Business services..."
+          kubectl apply -f k8s/product-service.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/user-service.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/order-service.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/payment-service.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/shipping-service.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/favourite-service.yaml -n ${{ env.NAMESPACE }}
+          
+          echo "Step 4: Gateway and proxy..."
+          kubectl apply -f k8s/api-gateway.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/proxy-client.yaml -n ${{ env.NAMESPACE }}
+
+      - name: Wait for all deployments
+        run: |
+          echo "Waiting for all deployments to be ready..."
+          DEPLOYMENTS="service-discovery cloud-config product-service user-service order-service payment-service shipping-service favourite-service api-gateway proxy-client"
+          for deploy in $DEPLOYMENTS; do
+            echo "Checking $deploy..."
+            kubectl rollout status deployment/$deploy -n ${{ env.NAMESPACE }} --timeout=300s
+          done
+
+      - name: Verify deployment
+        run: |
+          echo "========================================="
+          echo "PRODUCTION Deployment Verification"
+          echo "========================================="
+          
+          echo "Pods status:"
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          
+          echo ""
+          echo "Services status:"
+          kubectl get services -n ${{ env.NAMESPACE }}
+          
+          echo ""
+          echo "Getting API Gateway external IP..."
+          kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+      - name: Health check
+        run: |
+          for i in {1..30}; do
+            IP=$(kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$IP" ]; then
+              echo "Testing health endpoint at http://$IP:8080/actuator/health"
+              curl -s -o /dev/null -w "%{http_code}" http://$IP:8080/actuator/health || true
+              break
+            fi
+            echo "Waiting for LoadBalancer IP... ($i/30)"
+            sleep 10
+          done
+
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    
+    steps:
+      - name: Deployment Summary
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ PRODUCTION deployment completed successfully!"
+            echo "Commit: ${{ github.sha }}"
+            echo "Deployed by: ${{ github.actor }}"
+          else
+            echo "❌ PRODUCTION deployment failed!"
+            echo "Please check the logs and consider rollback"
+          fi

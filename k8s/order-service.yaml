@@ -37,6 +37,10 @@ spec:
           value: "org.h2.Driver"
         - name: SPRING_DATASOURCE_USERNAME
           value: "sa"
+        - name: SPRING_FLYWAY_ENABLED
+          value: "false"
+        - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+          value: "update"
         resources:
           requests:
             memory: "256Mi"
