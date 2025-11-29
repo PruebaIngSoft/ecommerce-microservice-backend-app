@@ -50,7 +50,7 @@ jobs:
 
       - name: Build and run unit tests
         run: |
-          mvn clean package -DskipTests=false -Dtest="!**/e2e/**" -B
+          mvn clean package -DskipTests=false -Dtest="!**/e2e/**" -DfailIfNoTests=false -B
         continue-on-error: false
 
       - name: Run Trivy vulnerability scanner
