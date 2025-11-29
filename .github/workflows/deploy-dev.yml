@@ -103,6 +103,13 @@ jobs:
           kubectl apply -f k8s/namespaces.yaml
           kubectl get namespace ${{ env.NAMESPACE }}
 
+      - name: Clean up old deployments (dev environment only)
+        run: |
+          echo "Cleaning up old deployments in dev namespace to free resources..."
+          kubectl delete deployment --all -n ${{ env.NAMESPACE }} || true
+          kubectl delete svc --all -n ${{ env.NAMESPACE }} || true
+          echo "Cleanup completed. Ready for fresh deployment."
+
       - name: Install envsubst
         run: |
           sudo apt-get update

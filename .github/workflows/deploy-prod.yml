@@ -7,6 +7,7 @@
 # - Requiere aprobación manual (configurar en GitHub Environments)
 # - Tag de imágenes: SHA del commit + "latest"
 # - Estrategia de rollout gradual
+# - Generación automática de Release Notes
 #
 # CONFIGURACIÓN REQUERIDA EN GITHUB:
 # 1. Settings → Environments → New environment → "production"
@@ -21,6 +22,11 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+
+# Permisos necesarios para crear releases
+permissions:
+  contents: write
+  actions: read
 
 env:
   JAVA_VERSION: '11'
@@ -107,6 +113,11 @@ jobs:
           kubectl apply -f k8s/namespaces.yaml
           kubectl get namespace ${{ env.NAMESPACE }}
 
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
       - name: Pre-deployment backup
         run: |
           echo "Creating backup of current prod state..."
@@ -115,6 +126,10 @@ jobs:
 
       - name: Deploy services to PRODUCTION namespace
         run: |
+          # Variables para sustituir en manifiestos
+          export ACR_LOGIN_SERVER="${{ env.REGISTRY_NAME }}"
+          export TAG="${{ github.sha }}"
+          
           # Deploy en orden de dependencias
           echo "========================================="
           echo "DEPLOYING TO PRODUCTION"
@@ -122,26 +137,26 @@ jobs:
           
           echo "Step 1: Infrastructure services..."
           kubectl apply -f k8s/zipkin.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/service-discovery.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/service-discovery.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           
           echo "Waiting for service-discovery..."
           kubectl rollout status deployment/service-discovery -n ${{ env.NAMESPACE }} --timeout=180s
           
           echo "Step 2: Configuration service..."
-          kubectl apply -f k8s/cloud-config.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/cloud-config.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           kubectl rollout status deployment/cloud-config -n ${{ env.NAMESPACE }} --timeout=180s
           
           echo "Step 3: Business services..."
-          kubectl apply -f k8s/product-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/user-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/order-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/payment-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/shipping-service.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/favourite-service.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/product-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/user-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/order-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/payment-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/shipping-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/favourite-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           
           echo "Step 4: Gateway and proxy..."
-          kubectl apply -f k8s/api-gateway.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f k8s/proxy-client.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/api-gateway.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/proxy-client.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
 
       - name: Wait for all deployments
         run: |
@@ -199,3 +214,55 @@ jobs:
             echo "❌ PRODUCTION deployment failed!"
             echo "Please check the logs and consider rollback"
           fi
+
+  # Job para crear Release automático con Release Notes
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version tag
+        id: version
+        run: |
+          # Generar tag basado en fecha y short SHA
+          VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ steps.version.outputs.VERSION }} -m "Release ${{ steps.version.outputs.VERSION }}"
+          git push origin ${{ steps.version.outputs.VERSION }}
+
+      - name: Create GitHub Release with auto-generated notes
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: "Release ${{ steps.version.outputs.VERSION }}"
+          generate_release_notes: true
+          body: |
+            ## 🚀 Production Deployment
+            
+            **Deployed by:** ${{ github.actor }}
+            **Commit:** ${{ github.sha }}
+            **Date:** ${{ github.event.head_commit.timestamp }}
+            
+            ### Changes
+            See auto-generated release notes below.
+            
+            ### Rollback
+            If issues arise, run:
+            ```bash
+            kubectl rollout undo deployment/<service-name> -n prod
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
