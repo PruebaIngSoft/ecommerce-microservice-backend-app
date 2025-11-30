@@ -31,6 +31,9 @@ class ShippingServiceE2ETest {
 		}
 
 		RestAssured.baseURI = gatewayUrl;
+
+		RestAssured.useRelaxedHTTPSValidation();
+
 		RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 	}
 

@@ -31,6 +31,9 @@ class PaymentServiceE2ETest {
 		}
 
 		RestAssured.baseURI = gatewayUrl;
+
+		RestAssured.useRelaxedHTTPSValidation();
+
 		RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 	}
 

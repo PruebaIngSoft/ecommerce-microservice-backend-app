@@ -33,6 +33,9 @@ class FavouriteServiceE2ETest {
 		}
 
 		RestAssured.baseURI = gatewayUrl;
+
+		RestAssured.useRelaxedHTTPSValidation();
+
 		RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 	}
 
