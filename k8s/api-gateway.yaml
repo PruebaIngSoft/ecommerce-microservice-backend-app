@@ -29,6 +29,14 @@ spec:
           value: "http://cloud-config:9296"
         - name: SPRING_APPLICATION_JSON
           value: '{"eureka": {"client": {"serviceUrl": {"defaultZone": "http://service-discovery:8761/eureka/"}, "registerWithEureka": true, "fetchRegistry": true}, "instance": {"preferIpAddress": true}}}'
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "health,info,prometheus,metrics"
+        - name: MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED
+          value: "true"
+        - name: MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED
+          value: "true"
+        - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+          value: "api-gateway"
         resources:
           requests:
             memory: "256Mi"
