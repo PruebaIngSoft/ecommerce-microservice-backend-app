@@ -1,0 +1,104 @@
+# Configuración optimizada para AKS Student Tier (recursos limitados)
+
+# Deshabilitar componentes pesados innecesarios
+alertmanager:
+  enabled: false
+
+nodeExporter:
+  enabled: false
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Permitir que Prometheus detecte ServiceMonitors sin filtro de Helm
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    
+    # Recursos bajos para Student Tier
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    
+    # Retención de datos reducida
+    retention: 7d
+    
+    # Storage pequeño
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+grafana:
+  enabled: true
+  adminPassword: "admin123"  # Cambiar en producción
+  
+  # Recursos bajos
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Dashboards automáticos de Spring Boot
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  
+  dashboards:
+    default:
+      spring-boot-statistics:
+        gnetId: 11378
+        revision: 1
+        datasource: Prometheus
+      jvm-micrometer:
+        gnetId: 12935
+        revision: 1
+        datasource: Prometheus
+      spring-boot-observability:
+        gnetId: 17175
+        revision: 1
+        datasource: Prometheus
+  
+  # Exponer como LoadBalancer (opcional)
+  service:
+    type: LoadBalancer
+    port: 80
+
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi

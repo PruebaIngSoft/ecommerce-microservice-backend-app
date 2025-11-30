@@ -1,0 +1,115 @@
+# Pipeline de Integración Continua (CI)
+#
+# PROPÓSITO: Build y tests para TODAS las ramas
+# NO despliega, solo valida que el código compile y pase tests
+#
+# SE EJECUTA EN:
+# - Push a cualquier rama
+# - Pull Requests a develop o main
+#
+# INCLUYE:
+# - Build con Maven
+# - Tests unitarios
+# - Escaneo de vulnerabilidades con Trivy
+# - Build de imágenes Docker (sin push en PRs)
+
+name: CI - Build and Test
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  pull_request:
+    branches: [main, dev]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+env:
+  JAVA_VERSION: '11'
+  REGISTRY_NAME: ${{ secrets.ACR_LOGIN_SERVER }}
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and run unit tests
+        run: |
+          mvn clean package -DskipTests=false -Dtest="!**/e2e/**" -DfailIfNoTests=false -B
+        continue-on-error: false
+
+      - name: SonarCloud Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          -Dsonar.projectKey=PruebaIngSoft_ecommerce-microservice-backend-app \
+          -Dsonar.organization=pruebaingsoft \
+          -Dsonar.host.url=https://sonarcloud.io \
+          -DskipTests
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/target/surefire-reports/*.xml'
+          retention-days: 7
+
+  # Solo build de imágenes Docker en push (no en PRs para ahorrar tiempo)
+  build-docker-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build JARs with Maven
+        run: mvn clean package -DskipTests -B
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images (without push)
+        run: |
+          SERVICES="service-discovery cloud-config api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
+          for service in $SERVICES; do
+            echo "Building $service..."
+            docker build -f ./$service/Dockerfile -t $service:${{ github.sha }} . || exit 1
+            echo "✓ $service built successfully"
+          done

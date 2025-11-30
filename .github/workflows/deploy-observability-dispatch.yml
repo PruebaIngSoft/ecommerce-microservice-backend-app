@@ -1,0 +1,56 @@
+name: "Setup Observability Stack (Helm)"
+
+on:
+  workflow_dispatch:
+
+env:
+  RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+jobs:
+  install-monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.12.0
+
+      - name: Run Install Script
+        run: |
+          # Damos permisos de ejecución
+          chmod +x observability/install.sh
+          
+          # Entramos a la carpeta para que encuentre los values.yaml
+          cd observability
+          
+          # Ejecutamos el script
+          ./install.sh
+
+      - name: Verify Installation
+        run: |
+          echo "Verificando Pods en namespace monitoring..."
+          kubectl get pods -n monitoring
+          
+          echo "Verificando Servicios..."
+          kubectl get svc -n monitoring

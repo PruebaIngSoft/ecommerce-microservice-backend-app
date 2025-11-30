@@ -1,0 +1,268 @@
+# Pipeline de Deploy a PRODUCCIÓN
+#
+# PROPÓSITO: Desplegar a ambiente de producción (namespace: prod)
+# SE EJECUTA: Solo cuando hay push a la rama 'main'
+#
+# CARACTERÍSTICAS:
+# - Requiere aprobación manual (configurar en GitHub Environments)
+# - Tag de imágenes: SHA del commit + "latest"
+# - Estrategia de rollout gradual
+# - Generación automática de Release Notes
+#
+# CONFIGURACIÓN REQUERIDA EN GITHUB:
+# 1. Settings → Environments → New environment → "production"
+# 2. Agregar "Required reviewers" 
+# 3. Opcional: Agregar "Wait timer" de algunos minutos
+
+name: Deploy to PRODUCTION
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# Permisos necesarios para crear releases
+permissions:
+  contents: write
+  actions: read
+
+env:
+  JAVA_VERSION: '11'
+  REGISTRY_NAME: ${{ secrets.ACR_LOGIN_SERVER }}
+  RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+  NAMESPACE: prod
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests -B
+
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker images
+        run: |
+          TAG="${{ github.sha }}"
+          TAG_LATEST="latest"
+          
+          SERVICES="service-discovery cloud-config api-gateway product-service user-service order-service payment-service shipping-service favourite-service proxy-client"
+          
+          for service in $SERVICES; do
+            echo "========================================="
+            echo "Building and pushing: $service"
+            echo "========================================="
+            
+            docker build -f ./$service/Dockerfile -t ${{ env.REGISTRY_NAME }}/$service:$TAG .
+            docker tag ${{ env.REGISTRY_NAME }}/$service:$TAG ${{ env.REGISTRY_NAME }}/$service:$TAG_LATEST
+            
+            docker push ${{ env.REGISTRY_NAME }}/$service:$TAG
+            docker push ${{ env.REGISTRY_NAME }}/$service:$TAG_LATEST
+            
+            echo "✓ $service pushed with tags: $TAG, $TAG_LATEST"
+          done
+
+  # REQUIERE APROBACIÓN MANUAL
+  deploy:
+    name: Deploy to PRODUCTION (requires approval)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production  # <- Esto requiere configurar GitHub Environment
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl apply -f k8s/namespaces.yaml
+          kubectl get namespace ${{ env.NAMESPACE }}
+
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Pre-deployment backup
+        run: |
+          echo "Creating backup of current prod state..."
+          kubectl get all -n ${{ env.NAMESPACE }} -o yaml > prod-backup-${{ github.sha }}.yaml || true
+          echo "Backup created (if namespace existed)"
+
+      - name: Deploy services to PRODUCTION namespace
+        run: |
+          # Variables para sustituir en manifiestos
+          export ACR_LOGIN_SERVER="${{ env.REGISTRY_NAME }}"
+          export TAG="${{ github.sha }}"
+          
+          # Deploy en orden de dependencias
+          echo "========================================="
+          echo "DEPLOYING TO PRODUCTION"
+          echo "========================================="
+          
+          echo "Step 1: Infrastructure services..."
+          kubectl apply -f k8s/zipkin.yaml -n ${{ env.NAMESPACE }}
+          envsubst < k8s/service-discovery.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          
+          echo "Waiting for service-discovery..."
+          kubectl rollout status deployment/service-discovery -n ${{ env.NAMESPACE }} --timeout=180s
+          
+          echo "Step 2: Configuration service..."
+          envsubst < k8s/cloud-config.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          kubectl rollout status deployment/cloud-config -n ${{ env.NAMESPACE }} --timeout=180s
+          
+          echo "Step 3: Business services..."
+          envsubst < k8s/product-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/user-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/order-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/payment-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/shipping-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/favourite-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          
+          echo "Step 4: Gateway and proxy..."
+          envsubst < k8s/api-gateway.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+          envsubst < k8s/proxy-client.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+
+      - name: Wait for all deployments
+        run: |
+          echo "Waiting for all deployments to be ready..."
+          DEPLOYMENTS="service-discovery cloud-config product-service user-service order-service payment-service shipping-service favourite-service api-gateway proxy-client"
+          for deploy in $DEPLOYMENTS; do
+            echo "Checking $deploy..."
+            kubectl rollout status deployment/$deploy -n ${{ env.NAMESPACE }} --timeout=300s
+          done
+
+      - name: Verify deployment
+        run: |
+          echo "========================================="
+          echo "PRODUCTION Deployment Verification"
+          echo "========================================="
+          
+          echo "Pods status:"
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          
+          echo ""
+          echo "Services status:"
+          kubectl get services -n ${{ env.NAMESPACE }}
+          
+          echo ""
+          echo "Getting API Gateway external IP..."
+          kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+      - name: Health check
+        run: |
+          for i in {1..30}; do
+            IP=$(kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$IP" ]; then
+              echo "Testing health endpoint at http://$IP:8080/actuator/health"
+              curl -s -o /dev/null -w "%{http_code}" http://$IP:8080/actuator/health || true
+              break
+            fi
+            echo "Waiting for LoadBalancer IP... ($i/30)"
+            sleep 10
+          done
+
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    
+    steps:
+      - name: Deployment Summary
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ PRODUCTION deployment completed successfully!"
+            echo "Commit: ${{ github.sha }}"
+            echo "Deployed by: ${{ github.actor }}"
+          else
+            echo "❌ PRODUCTION deployment failed!"
+            echo "Please check the logs and consider rollback"
+          fi
+
+  # Job para crear Release automático con Release Notes
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version tag
+        id: version
+        run: |
+          # Generar tag basado en fecha y short SHA
+          VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ steps.version.outputs.VERSION }} -m "Release ${{ steps.version.outputs.VERSION }}"
+          git push origin ${{ steps.version.outputs.VERSION }}
+
+      - name: Create GitHub Release with auto-generated notes
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: "Release ${{ steps.version.outputs.VERSION }}"
+          generate_release_notes: true
+          body: |
+            ## 🚀 Production Deployment
+            
+            **Deployed by:** ${{ github.actor }}
+            **Commit:** ${{ github.sha }}
+            **Date:** ${{ github.event.head_commit.timestamp }}
+            
+            ### Changes
+            See auto-generated release notes below.
+            
+            ### Rollback
+            If issues arise, run:
+            ```bash
+            kubectl rollout undo deployment/<service-name> -n prod
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

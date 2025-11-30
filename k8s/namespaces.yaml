@@ -1,0 +1,26 @@
+# Kubernetes Namespaces for Environment Separation
+# 
+# DECISIÓN: Usamos 2 namespaces (dev y prod) en lugar de 3
+# para optimizar recursos en cuenta Azure de estudiante.
+# 
+# - dev: Para desarrollo y pruebas (rama develop, feature/*)
+# - prod: Para producción (rama main)
+# - stage se simula con el proceso de PR a main
+#
+# Aplicar con: kubectl apply -f k8s/namespaces.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    environment: development
+    managed-by: github-actions
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    environment: production
+    managed-by: github-actions

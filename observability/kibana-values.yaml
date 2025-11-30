@@ -1,0 +1,32 @@
+# Kibana conectado a Elasticsearch
+
+elasticsearch:
+  hosts:
+    - "http://elasticsearch:9200"
+  security:
+    enabled: false
+
+service:
+  type: LoadBalancer  # Cambiar a ClusterIP si prefieres port-forward
+  port: 5601
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 300m
+    memory: 512Mi
+
+# Configuración adicional
+configuration:
+  server:
+    basePath: ""
+    rewriteBasePath: false
+
+# Variables de entorno
+extraEnvVars:
+  - name: ELASTICSEARCH_HOSTS
+    value: "http://elasticsearch:9200"
+  - name: SERVER_HOST
+    value: "0.0.0.0"

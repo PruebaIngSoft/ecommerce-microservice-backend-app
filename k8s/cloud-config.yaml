@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-config
+  labels:
+    app: cloud-config
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloud-config
+  template:
+    metadata:
+      labels:
+        app: cloud-config
+    spec:
+      containers:
+      - name: cloud-config
+        image: ${ACR_LOGIN_SERVER}/cloud-config:${TAG}
+        ports:
+        - containerPort: 9296
+          name: http
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx300m -Xms200m"
+        - name: SPRING_PROFILES_ACTIVE
+          value: "dev"
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "health,info,prometheus,metrics"
+        - name: MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED
+          value: "true"
+        - name: MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED
+          value: "true"
+        - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+          value: "cloud-config"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          tcpSocket:
+            port: 9296
+          initialDelaySeconds: 180
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: 9296
+          initialDelaySeconds: 180
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud-config
+  labels:
+    app: cloud-config
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9296
+    targetPort: 9296
+    protocol: TCP
+    name: http
+  selector:
+    app: cloud-config
