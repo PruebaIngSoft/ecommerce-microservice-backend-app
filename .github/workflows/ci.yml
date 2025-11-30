@@ -53,6 +53,17 @@ jobs:
           mvn clean package -DskipTests=false -Dtest="!**/e2e/**" -DfailIfNoTests=false -B
         continue-on-error: false
 
+      - name: SonarCloud Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          -Dsonar.projectKey=PruebaIngSoft_ecommerce-microservice-backend-app \
+          -Dsonar.organization=pruebaingsoft \
+          -Dsonar.host.url=https://sonarcloud.io \
+          -DskipTests
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
