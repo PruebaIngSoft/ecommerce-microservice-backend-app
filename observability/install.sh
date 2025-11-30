@@ -30,7 +30,7 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
   --namespace monitoring \
   --values prometheus-values.yaml \
   --wait \
-  --timeout 10m
+  --timeout 25m
 
 # 4. Instalar Elasticsearch
 echo -e "${GREEN}Instalando Elasticsearch...${NC}"
@@ -38,7 +38,7 @@ helm upgrade --install elasticsearch bitnami/elasticsearch \
   --namespace monitoring \
   --values elastic-values.yaml \
   --wait \
-  --timeout 10m
+  --timeout 25m
 
 # 5. Instalar Kibana
 echo -e "${GREEN}Instalando Kibana...${NC}"
@@ -46,7 +46,7 @@ helm upgrade --install kibana bitnami/kibana \
   --namespace monitoring \
   --values kibana-values.yaml \
   --wait \
-  --timeout 10m
+  --timeout 25m
 
 # 6. Instalar Filebeat
 echo -e "${GREEN}Instalando Filebeat...${NC}"
@@ -54,7 +54,7 @@ helm upgrade --install filebeat elastic/filebeat \
   --namespace monitoring \
   --values filebeat-values.yaml \
   --wait \
-  --timeout 10m
+  --timeout 25m
 
 # 7. Aplicar ServiceMonitor
 echo -e "${GREEN}Aplicando ServiceMonitor para Spring Boot...${NC}"
