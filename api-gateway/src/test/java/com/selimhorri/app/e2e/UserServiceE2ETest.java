@@ -30,6 +30,9 @@ class UserServiceE2ETest {
 		}
 
 		RestAssured.baseURI = gatewayUrl;
+
+		RestAssured.useRelaxedHTTPSValidation();
+
 		RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 	}
 

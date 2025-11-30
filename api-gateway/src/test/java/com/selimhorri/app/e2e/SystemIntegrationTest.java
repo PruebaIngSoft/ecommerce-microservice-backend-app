@@ -37,6 +37,9 @@ class SystemIntegrationTest {
 		}
 
 		RestAssured.baseURI = gatewayUrl;
+
+		RestAssured.useRelaxedHTTPSValidation();
+		
 		RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
 	}
 
