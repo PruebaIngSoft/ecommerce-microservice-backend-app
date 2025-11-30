@@ -225,18 +225,22 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.CLUSTER_NAME }}
 
-      - name: Get API Gateway URL
+      - name: Get Ingress URL
         id: get-url
         run: |
-          # Esperar a que el LoadBalancer tenga IP
+
           for i in {1..30}; do
-            IP=$(kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            
+            if [ -z "$IP" ]; then
+               IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            fi
+
             if [ -n "$IP" ]; then
-              echo "API_URL=http://$IP:8080" >> $GITHUB_OUTPUT
-              echo "Found API Gateway at: http://$IP:8080"
               break
             fi
-            echo "Waiting for LoadBalancer IP... ($i/30)"
+            
+            echo "Waiting for Ingress IP... ($i/30)"
             sleep 10
           done
 
@@ -274,17 +278,22 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.CLUSTER_NAME }}
 
-      - name: Get API Gateway URL
+      - name: Get Ingress URL
         id: get-url
         run: |
+
           for i in {1..30}; do
-            IP=$(kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            
+            if [ -z "$IP" ]; then
+               IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            fi
+
             if [ -n "$IP" ]; then
-              echo "API_URL=http://$IP:8080" >> $GITHUB_OUTPUT
-              echo "Found API Gateway at: http://$IP:8080"
               break
             fi
-            echo "Waiting for LoadBalancer IP... ($i/30)"
+            
+            echo "Waiting for Ingress IP... ($i/30)"
             sleep 10
           done
 
