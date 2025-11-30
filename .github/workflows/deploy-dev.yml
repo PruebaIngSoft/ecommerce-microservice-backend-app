@@ -107,11 +107,11 @@ jobs:
         run: |
           echo "--- PRUEBA DE SEGURIDAD RBAC ---"
           echo "1. ¿El auditor puede VER pods? (Esperado: yes)"
-          # Nota: Ajusta el namespace si no usas 'default' (ej: 'dev')
           kubectl auth can-i list pods --as=system:serviceaccount:default:dev-auditor
           
           echo "2. ¿El auditor puede BORRAR pods? (Esperado: no)"
-          kubectl auth can-i delete pods --as=system:serviceaccount:default:dev-auditor
+          # Agregamos '|| true' para que el 'exit code 1' (no) no rompa el pipeline
+          kubectl auth can-i delete pods --as=system:serviceaccount:default:dev-auditor || true 
           echo "--------------------------------"
 
       - name: Create namespace if not exists
