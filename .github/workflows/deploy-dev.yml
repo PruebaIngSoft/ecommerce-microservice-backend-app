@@ -114,6 +114,21 @@ jobs:
           kubectl auth can-i delete pods --as=system:serviceaccount:default:dev-auditor
           echo "--------------------------------"
 
+      - name: Setup Ingress Controller & TLS
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+          
+          sleep 60 
+          
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout tls.key -out tls.crt \
+            -subj "/CN=ecommerce.local/O=Ingesoft/C=CO"
+          
+          kubectl create secret tls ecommerce-tls-secret \
+            --key tls.key --cert tls.crt \
+            -n ${{ env.NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Create namespace if not exists
         run: |
           kubectl apply -f k8s/namespaces.yaml
@@ -153,6 +168,10 @@ jobs:
           echo "Deploying gateway and proxy..."
           envsubst < k8s/api-gateway.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           envsubst < k8s/proxy-client.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
+
+          echo "Deploying Ingress (HTTPS) rules..."
+          export NAMESPACE="${{ env.NAMESPACE }}"
+          envsubst < k8s/ingress.yaml | kubectl apply -f -
 
       - name: Wait for deployments
         run: |
