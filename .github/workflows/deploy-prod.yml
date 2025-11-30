@@ -108,6 +108,33 @@ jobs:
             --name ${{ env.CLUSTER_NAME }} \
             --overwrite-existing
 
+      - name: Apply RBAC Security Configuration
+        run: |
+          echo "Applying RBAC policies..."
+          kubectl apply -f k8s/security-rbac.yaml
+
+      - name: Setup Ingress Controller & TLS
+        run: |
+          echo "Installing Ingress Controller..."
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+          
+          echo "Waiting for Ingress Controller..."
+          # No usamos sleep bloqueante, dejamos que siga
+          
+          echo "Generating Self-Signed Cert..."
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout tls.key -out tls.crt \
+            -subj "/CN=ecommerce.prod/O=Ingesoft/C=CO"
+          
+          echo "Saving TLS Secret in namespace ${{ env.NAMESPACE }}..."
+          # Crear namespace primero por si acaso
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          
+          kubectl create secret tls ecommerce-tls-secret \
+            --key tls.key --cert tls.crt \
+            -n ${{ env.NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Create namespace if not exists
         run: |
           kubectl apply -f k8s/namespaces.yaml
@@ -158,6 +185,10 @@ jobs:
           envsubst < k8s/api-gateway.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           envsubst < k8s/proxy-client.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
 
+          echo "Deploying Ingress Rules (HTTPS)..."
+          export NAMESPACE="${{ env.NAMESPACE }}"
+          envsubst < k8s/ingress.yaml | kubectl apply -f -
+
       - name: Wait for all deployments
         run: |
           echo "Waiting for all deployments to be ready..."
@@ -181,19 +212,29 @@ jobs:
           kubectl get services -n ${{ env.NAMESPACE }}
           
           echo ""
-          echo "Getting API Gateway external IP..."
-          kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+          echo "Getting Ingress external IP..."
+          # CAMBIO: Buscamos el servicio del Ingress en su namespace correcto
+          kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 
       - name: Health check
         run: |
+          echo "Waiting for Ingress IP availability..."
           for i in {1..30}; do
-            IP=$(kubectl get svc api-gateway -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            # CAMBIO: Buscamos la IP del Ingress Controller
+            IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            
+            # Fallback para Hostname (común en Azure)
+            if [ -z "$IP" ]; then
+               IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            fi
+
             if [ -n "$IP" ]; then
-              echo "Testing health endpoint at http://$IP:8080/actuator/health"
-              curl -s -o /dev/null -w "%{http_code}" http://$IP:8080/actuator/health || true
+              # CAMBIO: Usamos HTTPS, quitamos el puerto 8080 y agregamos -k (insecure) para el certificado propio
+              echo "Testing health endpoint at https://$IP/actuator/health"
+              curl -k -s -o /dev/null -w "%{http_code}" https://$IP/actuator/health || true
               break
             fi
-            echo "Waiting for LoadBalancer IP... ($i/30)"
+            echo "Waiting for Ingress IP... ($i/30)"
             sleep 10
           done
 
