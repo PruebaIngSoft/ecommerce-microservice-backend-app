@@ -4,8 +4,11 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,8 +32,15 @@ public class ProductResource {
 	
 	private final ProductService productService;
 	
+	@Value("${feature.toggle.promotion:false}")
+	private boolean isPromotionActive;
+	
 	@GetMapping
+	@Bulkhead(name = "productList", type = Bulkhead.Type.SEMAPHORE)
 	public ResponseEntity<DtoCollectionResponse<ProductDto>> findAll() {
+		if (isPromotionActive) {
+			log.info("*** FEATURE TOGGLE: MODO PROMOCIÓN ACTIVO ***");
+		}
 		log.info("*** ProductDto List, controller; fetch all categories *");
 		return ResponseEntity.ok(new DtoCollectionResponse<>(this.productService.findAll()));
 	}
