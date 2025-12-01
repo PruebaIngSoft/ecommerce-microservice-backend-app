@@ -1,17 +1,27 @@
 #!/bin/bash
-# filepath: k8s/observability/install.sh
-# Script de instalación del stack de observabilidad
+# filepath: observability/install.sh
+# Script de instalación del stack de observabilidad - OPTIMIZADO PARA AKS STUDENT TIER
 
 set -e
 
 echo "========================================"
-echo "Instalando Stack de Observabilidad"
+echo "🚀 Instalando Stack de Observabilidad"
 echo "========================================"
 
-# Colores
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Función para esperar a que un deployment esté listo
+wait_for_deployment() {
+  local namespace=$1
+  local deployment=$2
+  local timeout=$3
+  
+  echo -e "${YELLOW}Esperando a $deployment (timeout: ${timeout}s)...${NC}"
+  kubectl wait --for=condition=available --timeout=${timeout}s deployment/$deployment -n $namespace || true
+}
 
 # 1. Agregar repositorios de Helm
 echo -e "${GREEN}Agregando repositorios de Helm...${NC}"
@@ -24,13 +34,20 @@ helm repo update
 echo -e "${GREEN}Creando namespace 'monitoring'...${NC}"
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-# 3. Instalar Prometheus + Grafana
-echo -e "${GREEN}Instalando Prometheus y Grafana...${NC}"
+# 3. Instalar Prometheus + Grafana (CON TIMEOUT EXTENDIDO)
+echo -e "${GREEN}Instalando Prometheus y Grafana (esto puede tardar 15-20 minutos)...${NC}"
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --values prometheus-values.yaml \
   --wait \
-  --timeout 25m
+  --timeout 40m \
+  --atomic \
+  --cleanup-on-fail
+
+echo -e "${GREEN}Prometheus instalado${NC}"
+
+# Esperar a que Grafana esté listo
+wait_for_deployment monitoring kube-prometheus-stack-grafana 300
 
 # 4. Instalar Elasticsearch
 echo -e "${GREEN}Instalando Elasticsearch...${NC}"
@@ -38,7 +55,11 @@ helm upgrade --install elasticsearch bitnami/elasticsearch \
   --namespace monitoring \
   --values elastic-values.yaml \
   --wait \
-  --timeout 25m
+  --timeout 30m \
+  --atomic \
+  --cleanup-on-fail
+
+echo -e "${GREEN}Elasticsearch instalado${NC}"
 
 # 5. Instalar Kibana
 echo -e "${GREEN}Instalando Kibana...${NC}"
@@ -46,7 +67,11 @@ helm upgrade --install kibana bitnami/kibana \
   --namespace monitoring \
   --values kibana-values.yaml \
   --wait \
-  --timeout 25m
+  --timeout 20m \
+  --atomic \
+  --cleanup-on-fail
+
+echo -e "${GREEN}Kibana instalado${NC}"
 
 # 6. Instalar Filebeat
 echo -e "${GREEN}Instalando Filebeat...${NC}"
@@ -54,16 +79,26 @@ helm upgrade --install filebeat elastic/filebeat \
   --namespace monitoring \
   --values filebeat-values.yaml \
   --wait \
-  --timeout 25m
+  --timeout 15m
+
+echo -e "${GREEN}Filebeat instalado${NC}"
 
 # 7. Aplicar ServiceMonitor
 echo -e "${GREEN}Aplicando ServiceMonitor para Spring Boot...${NC}"
 kubectl apply -f spring-boot-servicemonitor.yaml
 
-# 8. Verificar despliegue
 echo ""
-echo -e "${GREEN}Verificando pods...${NC}"
+echo "========================================"
+echo -e "${YELLOW}ESTADO DE LA INSTALACIÓN${NC}"
+echo "========================================"
+
+echo ""
+echo -e "${GREEN}Pods en namespace monitoring:${NC}"
 kubectl get pods -n monitoring
+
+echo ""
+echo -e "${GREEN}Servicios en namespace monitoring:${NC}"
+kubectl get svc -n monitoring
 
 echo ""
 echo "========================================"
@@ -71,13 +106,18 @@ echo -e "${YELLOW}ACCESO A LOS SERVICIOS${NC}"
 echo "========================================"
 
 # Grafana
-GRAFANA_PASSWORD=$(kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
+echo ""
 echo -e "${GREEN}Grafana:${NC}"
 echo "  Usuario: admin"
-echo "  Password: $GRAFANA_PASSWORD"
-echo "  URL externa: http://$(kubectl get svc -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+echo "  Contraseña: (se muestra abajo)"
+if kubectl get secret -n monitoring kube-prometheus-stack-grafana &>/dev/null; then
+  GRAFANA_PASSWORD=$(kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 --decode 2>/dev/null || echo "admin123")
+  echo "  Contraseña: $GRAFANA_PASSWORD"
+else
+  echo "  Secret no encontrado aún, espera 1-2 minutos"
+fi
 echo ""
-echo "  O usa port-forward:"
+echo "  Port-forward:"
 echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
 echo "  http://localhost:3000"
 echo ""
@@ -90,9 +130,6 @@ echo ""
 
 # Kibana
 echo -e "${GREEN}Kibana:${NC}"
-echo "  URL externa: http://$(kubectl get svc -n monitoring kibana -o jsonpath='{.status.loadBalancer.ingress[0].ip}'):5601"
-echo ""
-echo "  O usa port-forward:"
 echo "  kubectl port-forward -n monitoring svc/kibana 5601:5601"
 echo "  http://localhost:5601"
 echo ""
@@ -103,4 +140,20 @@ echo "  kubectl port-forward -n monitoring svc/elasticsearch 9200:9200"
 echo "  http://localhost:9200"
 echo ""
 
-echo -e "${GREEN}Instalación completada!${NC}"
+echo "========================================"
+echo -e "${YELLOW}PRÓXIMOS PASOS${NC}"
+echo "========================================"
+echo ""
+echo "1. Agrega el label 'monitoring: true' a todos los Services:"
+echo "   metadata:"
+echo "     labels:"
+echo "       monitoring: \"true\""
+echo ""
+echo "2. Reindeployea tus microservicios:"
+echo "   kubectl rollout restart deployment -n default"
+echo ""
+echo "3. Verifica que Prometheus esté scrapeando:"
+echo "   kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
+echo "   Luego visita: http://localhost:9090/targets"
+echo ""
+echo -e "${GREEN}¡Instalación completada!${NC}"
