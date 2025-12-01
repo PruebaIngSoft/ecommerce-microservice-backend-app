@@ -89,6 +89,49 @@ Evidencia del pipeline de GitHub Actions completando la instalación sin errores
 
 ---
 
-## 6. Conclusión
+## 6. Métricas de Negocio
+
+Además de las métricas técnicas estándar (CPU, memoria, latencia), el sistema expone métricas de negocio clave a través de los endpoints `/actuator/prometheus` de cada microservicio:
+
+### 6.1. Métricas Implementadas
+
+**Order Service:**
+- `orders.created.total` - Total de órdenes creadas
+- `orders.by.status` - Distribución por estado (PENDING, CONFIRMED, SHIPPED)
+- `orders.revenue.total` - Valor monetario total procesado
+
+**Payment Service:**
+- `payments.processed.total` - Transacciones exitosas
+- `payments.failed.count` - Fallos en procesamiento
+- `payments.average.amount` - Monto promedio
+
+**Product Service:**
+- `products.views.total` - Visualizaciones de productos
+- `products.stock.low` - Alertas de inventario bajo
+
+**User Service:**
+- `users.registered.total` - Registros acumulados
+- `users.active.sessions` - Sesiones concurrentes
+
+### 6.2. Visualización en Grafana
+
+Estas métricas se consultan mediante PromQL y se visualizan en dashboards personalizados:
+
+```promql
+# Tasa de órdenes por minuto
+rate(orders_created_total[5m])
+
+# Ingresos en tiempo real
+sum(orders_revenue_total)
+
+# Tasa de error en pagos
+rate(payments_failed_count[5m]) / rate(payments_processed_total[5m])
+```
+
+Los dashboards correlacionan métricas técnicas con KPIs de negocio (ej: latencia P95 vs tasa de conversión), permitiendo decisiones informadas basadas en datos operacionales en tiempo real.
+
+---
+
+## 7. Conclusión
 
 Se ha entregado una plataforma de observabilidad funcional que cumple con los estándares de la industria (Prometheus/ELK) pero adaptada ingeniosamente a las restricciones presupuestales del proyecto. Esto permite al equipo detectar errores (logs) y cuellos de botella (métricas) sin comprometer la estabilidad de los microservicios de negocio.
