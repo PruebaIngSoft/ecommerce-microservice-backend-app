@@ -311,8 +311,8 @@ Trivy escanea dependencias y código en busca de vulnerabilidades conocidas (CVE
 
 ![alt text](imgs/cicd/trivy.png)
 
-
 A pesar de que Trivy detectó 573 vulnerabilidades distribuidas en los archivos pom.xml del proyecto, siendo el principal factor el uso de Spring Boot 2.5.7 (versión de 2021). Estas vulnerabilidades provienen principalmente de dependencias transitivas con CVEs conocidos que han sido corregidos en versiones posteriores del framework. La detección exitosa de estas vulnerabilidades demuestra la efectividad de Trivy como herramienta de análisis de seguridad en el pipeline CI/CD, permitiendo identificar riesgos antes del despliegue.
+
 ### 4.4.2 Proceso de Remediación
 
 **Flujo de resolución:**
@@ -330,8 +330,6 @@ A pesar de que Trivy detectó 573 vulnerabilidades distribuidas en los archivos 
     <version>5.3.27</version>
 </dependency>
 ```
-
-
 ## 4.5 Versionado Semántico Automático
 
 ### 4.5.1 Estrategia de Versionado
@@ -453,6 +451,9 @@ deploy:
 4. Reviewer aprueba mediante interfaz de GitHub
 5. Deploy continúa automáticamente
 
+![alt text](imgs/cicd/pr.png)
+![alt text](imgs/cicd/prod.png)
+![alt text](imgs/cicd/prodpr.png)
 
 ### 4.7.3 Historial y Rollback
 
@@ -484,17 +485,6 @@ kubectl rollout status deployment/<service> -n prod
 | **Change Failure Rate** | < 15% | Basado en rollbacks |
 | **Pipeline Success Rate** | > 85% | Calculado semanalmente |
 
-**📸 PANTALLAZO REQUERIDO #32:**
-- **Ubicación:** `docs/imgs/cicd/07-approvals/workflow-insights.png`
-- **Contenido:** GitHub Insights de workflows
-- **Cómo obtenerlo:**
-  1. Ve a Actions
-  2. Selecciona un workflow
-  3. Click en "..." → "View workflow insights"
-  4. Captura mostrando:
-     - Success rate
-     - Average duration
-     - Runs per week
 
 ### 4.8.2 Tiempo de Ejecución
 
