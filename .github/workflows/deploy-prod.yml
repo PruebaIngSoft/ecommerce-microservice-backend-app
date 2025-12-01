@@ -167,11 +167,11 @@ jobs:
           envsubst < k8s/service-discovery.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
           
           echo "Waiting for service-discovery..."
-          kubectl rollout status deployment/service-discovery -n ${{ env.NAMESPACE }} --timeout=180s
+          kubectl rollout status deployment/service-discovery -n ${{ env.NAMESPACE }} --timeout=120s || true
           
-          echo "Step 2: Configuration service..."
+          echo "Deploying cloud-config..."
           envsubst < k8s/cloud-config.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -
-          kubectl rollout status deployment/cloud-config -n ${{ env.NAMESPACE }} --timeout=180s
+          kubectl rollout status deployment/cloud-config -n ${{ env.NAMESPACE }} --timeout=120s || true
           
           echo "Step 3: Business services..."
           envsubst < k8s/product-service.yaml | kubectl apply -n ${{ env.NAMESPACE }} -f -

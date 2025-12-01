@@ -1,0 +1,48 @@
+# Elasticsearch single-node para recursos limitados
+
+global:
+  kibanaEnabled: true
+
+# Single-node mode (deshabilitar todos los roles excepto master)
+master:
+  replicaCount: 1
+  heapSize: 512m
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+data:
+  replicaCount: 0
+
+coordinating:
+  replicaCount: 0
+
+ingest:
+  replicaCount: 0
+
+# Configuración de JVM
+sysctlImage:
+  enabled: true
+
+# Security deshabilitada para desarrollo
+security:
+  enabled: false
+  elasticPassword: "elastic123"
+
+# Persistencia
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Variables de entorno críticas para bajo consumo
+extraEnvVars:
+  - name: ES_JAVA_OPTS
+    value: "-Xmx512m -Xms512m"
+  - name: discovery.type
+    value: "single-node"
+  - name: xpack.security.enabled
+    value: "false"

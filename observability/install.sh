@@ -22,7 +22,16 @@ helm repo update
 echo -e "${GREEN}Asegurando namespace 'monitoring'...${NC}"
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-# 3. Instalar Prometheus + Grafana
+echo -e "${YELLOW}Limpiando instalaciones previas bloqueadas (Fix 'operation in progress')...${NC}"
+# Intentamos desinstalar para liberar el candado. El '|| true' evita que falle si no existe.
+helm uninstall kube-prometheus-stack -n monitoring --wait || true
+helm uninstall elasticsearch -n monitoring --wait || true
+helm uninstall kibana -n monitoring --wait || true
+helm uninstall filebeat -n monitoring --wait || true
+echo -e "${GREEN}Limpieza terminada. Iniciando instalación limpia...${NC}"
+
+# 3. Instalar Prometheus + Grafana (MODO ASÍNCRONO)
+# Quitamos --wait para que no bloquee el pipeline si tarda mucho en arrancar
 echo -e "${GREEN}Instalando Prometheus y Grafana...${NC}"
 # Nota: Usamos timeout corto y sin wait para evitar bloqueos
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \

@@ -10,39 +10,35 @@ nodeExporter:
 prometheusOperator:
   resources:
     requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
       cpu: 100m
       memory: 128Mi
-    limits:
-      cpu: 200m
-      memory: 256Mi
 
 prometheus:
   enabled: true
   prometheusSpec:
-    # Permitir que Prometheus detecte ServiceMonitors sin filtro de Helm
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     
-    # Recursos bajos para Student Tier
     resources:
       requests:
-        cpu: 200m
-        memory: 256Mi
+        cpu: 100m
+        memory: 128Mi
       limits:
-        cpu: 500m
-        memory: 512Mi
+        cpu: 250m
+        memory: 256Mi
     
-    # Retención de datos reducida
-    retention: 7d
+    retention: 3d
     
-    # Storage pequeño
     storageSpec:
       volumeClaimTemplate:
         spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 5Gi
+              storage: 3Gi
 
 grafana:
   enabled: true
@@ -92,7 +88,7 @@ grafana:
     port: 80
 
 kubeStateMetrics:
-  enabled: true
+  enabled: false
 
 kube-state-metrics:
   resources:

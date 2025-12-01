@@ -1,0 +1,26 @@
+name: Destroy DEV Environment
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+env:
+  RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Get AKS Credentials
+        run: az aks get-credentials --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.CLUSTER_NAME }} --overwrite-existing
+      
+      - name: Delete Dev Namespace
+        run: |
+          echo "🗑️ Eliminando namespace dev y todos sus recursos..."
+          kubectl delete namespace dev --timeout=10m || true
+          echo "✅ Limpieza completada. El Ingress y la RAM están libres."
