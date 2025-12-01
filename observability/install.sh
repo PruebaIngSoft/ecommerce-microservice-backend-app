@@ -1,6 +1,6 @@
 #!/bin/bash
 # filepath: observability/install.sh
-# Script de instalación del stack de observabilidad - VERSIÓN FINAL ELASTIC OFICIAL
+# Script de instalación del stack de observabilidad - VERSIÓN FINAL CORREGIDA
 
 set -e
 
@@ -22,24 +22,29 @@ helm repo update
 echo -e "${GREEN}Asegurando namespace 'monitoring'...${NC}"
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-echo -e "${YELLOW}Limpiando instalaciones previas bloqueadas (Fix 'operation in progress')...${NC}"
-# Intentamos desinstalar para liberar el candado. El '|| true' evita que falle si no existe.
+# --- LIMPIEZA PROFUNDA ---
+echo -e "${YELLOW}Limpiando instalaciones previas y residuos...${NC}"
 helm uninstall kube-prometheus-stack -n monitoring --wait || true
 helm uninstall elasticsearch -n monitoring --wait || true
 helm uninstall kibana -n monitoring --wait || true
 helm uninstall filebeat -n monitoring --wait || true
-echo -e "${GREEN}Limpieza terminada. Iniciando instalación limpia...${NC}"
 
-# 3. Instalar Prometheus + Grafana (MODO ASÍNCRONO)
-# Quitamos --wait para que no bloquee el pipeline si tarda mucho en arrancar
+# Borrar ConfigMaps basura que dejan los charts de Elastic y bloquean la reinstalación
+kubectl delete configmap kibana-kibana-helm-scripts -n monitoring --ignore-not-found || true
+kubectl delete configmap elasticsearch-master-helm-scripts -n monitoring --ignore-not-found || true
+echo -e "${GREEN}Limpieza terminada.${NC}"
+# -------------------------
+
+# 3. Instalar Prometheus + Grafana
 echo -e "${GREEN}Instalando Prometheus y Grafana...${NC}"
-# Nota: Usamos timeout corto y sin wait para evitar bloqueos
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --values prometheus-values.yaml \
   --timeout 10m
 
-# 4. Instalar Elasticsearch (OFICIAL) - Configuración "Bonsái"
+echo -e "${GREEN}Orden de instalación de Prometheus enviada.${NC}"
+
+# 4. Instalar Elasticsearch (OFICIAL)
 echo -e "${GREEN}Instalando Elasticsearch (Oficial)...${NC}"
 helm upgrade --install elasticsearch elastic/elasticsearch \
   --namespace monitoring \
@@ -53,11 +58,13 @@ helm upgrade --install elasticsearch elastic/elasticsearch \
 
 echo -e "${GREEN}Orden de instalación de Elasticsearch enviada.${NC}"
 
-echo "Dando 60 segundos al cluster para digerir Elasticsearch..."
-sleep 60
+# Pausa táctica para evitar sobrecarga antes de Kibana
+echo "⏳ Esperando 30s para estabilizar el cluster..."
+sleep 30
 
-# 5. Instalar Kibana (OFICIAL) - CON NO-HOOKS
-echo -e "${GREEN}📈 Instalando Kibana (Oficial)...${NC}"
+# 5. Instalar Kibana (OFICIAL)
+echo -e "${GREEN}Instalando Kibana (Oficial)...${NC}"
+# Usamos --no-hooks para evitar que falle si Elastic aun no responde
 helm upgrade --install kibana elastic/kibana \
   --namespace monitoring \
   --set resources.requests.memory=256Mi \
@@ -68,15 +75,6 @@ helm upgrade --install kibana elastic/kibana \
 
 echo -e "${GREEN}Orden de instalación de Kibana enviada.${NC}"
 
-# 5. Instalar Kibana (OFICIAL)
-echo -e "${GREEN}Instalando Kibana (Oficial)...${NC}"
-helm upgrade --install kibana elastic/kibana \
-  --namespace monitoring \
-  --set resources.requests.memory=256Mi \
-  --set resources.limits.memory=512Mi \
-  --set service.type=LoadBalancer \
-  --timeout 10m
-
 # 6. Instalar Filebeat (OFICIAL)
 echo -e "${GREEN}Instalando Filebeat (Oficial)...${NC}"
 helm upgrade --install filebeat elastic/filebeat \
@@ -84,10 +82,12 @@ helm upgrade --install filebeat elastic/filebeat \
   --set daemonset.filebeatConfig.filebeat.yml.output.elasticsearch.hosts='["elasticsearch-master:9200"]' \
   --timeout 10m
 
+echo -e "${GREEN}Orden de instalación de Filebeat enviada.${NC}"
+
 # 7. Aplicar Monitor
 echo -e "${GREEN}Aplicando ServiceMonitor...${NC}"
 kubectl apply -f spring-boot-servicemonitor.yaml
 
 echo ""
-echo -e "${GREEN}¡Instalación enviada! Los pods arrancarán en unos minutos.${NC}"
+echo -e "${GREEN}¡Instalación finalizada exitosamente!${NC}"
 echo "Verifica el estado con: kubectl get pods -n monitoring"
