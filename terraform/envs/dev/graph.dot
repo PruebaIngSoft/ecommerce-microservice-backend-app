@@ -1,0 +1,45 @@
+﻿digraph G {
+  rankdir = "RL";
+  node [shape = rect, fontname = "sans-serif"];
+  subgraph "cluster_module.acr" {
+    label = "module.acr"
+    fontname = "sans-serif"
+    "module.acr.azurerm_container_registry.main" [label="azurerm_container_registry.main"];
+    "module.acr.azurerm_resource_group.acr" [label="azurerm_resource_group.acr"];
+  }
+  subgraph "cluster_module.aks" {
+    label = "module.aks"
+    fontname = "sans-serif"
+    "module.aks.azurerm_kubernetes_cluster.main" [label="azurerm_kubernetes_cluster.main"];
+    "module.aks.azurerm_resource_group.aks" [label="azurerm_resource_group.aks"];
+    "module.aks.azurerm_role_assignment.acr_pull" [label="azurerm_role_assignment.acr_pull"];
+  }
+  subgraph "cluster_module.database" {
+    label = "module.database"
+    fontname = "sans-serif"
+    "module.database.azurerm_mssql_database.main" [label="azurerm_mssql_database.main"];
+    "module.database.azurerm_mssql_firewall_rule.allow_azure_services" [label="azurerm_mssql_firewall_rule.allow_azure_services"];
+    "module.database.azurerm_mssql_server.main" [label="azurerm_mssql_server.main"];
+    "module.database.azurerm_resource_group.database" [label="azurerm_resource_group.database"];
+  }
+  subgraph "cluster_module.networking" {
+    label = "module.networking"
+    fontname = "sans-serif"
+    "module.networking.azurerm_resource_group.networking" [label="azurerm_resource_group.networking"];
+    "module.networking.azurerm_subnet.aks" [label="azurerm_subnet.aks"];
+    "module.networking.azurerm_subnet.database" [label="azurerm_subnet.database"];
+    "module.networking.azurerm_virtual_network.main" [label="azurerm_virtual_network.main"];
+  }
+  "module.acr.azurerm_container_registry.main" -> "module.acr.azurerm_resource_group.acr";
+  "module.aks.azurerm_kubernetes_cluster.main" -> "module.aks.azurerm_resource_group.aks";
+  "module.aks.azurerm_resource_group.aks" -> "module.acr.azurerm_container_registry.main";
+  "module.aks.azurerm_resource_group.aks" -> "module.networking.azurerm_subnet.aks";
+  "module.aks.azurerm_resource_group.aks" -> "module.networking.azurerm_subnet.database";
+  "module.aks.azurerm_role_assignment.acr_pull" -> "module.aks.azurerm_kubernetes_cluster.main";
+  "module.database.azurerm_mssql_database.main" -> "module.database.azurerm_mssql_server.main";
+  "module.database.azurerm_mssql_firewall_rule.allow_azure_services" -> "module.database.azurerm_mssql_server.main";
+  "module.database.azurerm_mssql_server.main" -> "module.database.azurerm_resource_group.database";
+  "module.networking.azurerm_subnet.aks" -> "module.networking.azurerm_virtual_network.main";
+  "module.networking.azurerm_subnet.database" -> "module.networking.azurerm_virtual_network.main";
+  "module.networking.azurerm_virtual_network.main" -> "module.networking.azurerm_resource_group.networking";
+}
