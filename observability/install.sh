@@ -51,6 +51,23 @@ helm upgrade --install elasticsearch elastic/elasticsearch \
   --set persistence.enabled=false \
   --timeout 10m
 
+echo -e "${GREEN}Orden de instalación de Elasticsearch enviada.${NC}"
+
+echo "Dando 60 segundos al cluster para digerir Elasticsearch..."
+sleep 60
+
+# 5. Instalar Kibana (OFICIAL) - CON NO-HOOKS
+echo -e "${GREEN}📈 Instalando Kibana (Oficial)...${NC}"
+helm upgrade --install kibana elastic/kibana \
+  --namespace monitoring \
+  --set resources.requests.memory=256Mi \
+  --set resources.limits.memory=512Mi \
+  --set service.type=LoadBalancer \
+  --timeout 10m \
+  --no-hooks
+
+echo -e "${GREEN}Orden de instalación de Kibana enviada.${NC}"
+
 # 5. Instalar Kibana (OFICIAL)
 echo -e "${GREEN}Instalando Kibana (Oficial)...${NC}"
 helm upgrade --install kibana elastic/kibana \
