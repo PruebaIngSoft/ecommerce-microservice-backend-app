@@ -25,6 +25,14 @@ spec:
           value: "-Xmx300m -Xms200m"
         - name: SPRING_PROFILES_ACTIVE
           value: "dev"
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "health,info,prometheus,metrics"
+        - name: MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED
+          value: "true"
+        - name: MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED
+          value: "true"
+        - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+          value: "cloud-config"
         resources:
           requests:
             memory: "256Mi"
