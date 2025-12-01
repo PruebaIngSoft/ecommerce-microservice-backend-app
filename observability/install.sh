@@ -1,6 +1,6 @@
 #!/bin/bash
 # filepath: observability/install.sh
-# Script de instalación del stack de observabilidad - VERSIÓN FINAL CORREGIDA
+# Script de instalación del stack de observabilidad - VERSIÓN FINAL CORREGIDA (Filebeat Fix)
 
 set -e
 
@@ -24,12 +24,13 @@ kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f 
 
 # --- LIMPIEZA PROFUNDA ---
 echo -e "${YELLOW}Limpiando instalaciones previas y residuos...${NC}"
+# Borramos todo para asegurar una instalación limpia
 helm uninstall kube-prometheus-stack -n monitoring --wait || true
 helm uninstall elasticsearch -n monitoring --wait || true
 helm uninstall kibana -n monitoring --wait || true
 helm uninstall filebeat -n monitoring --wait || true
 
-# Borrar ConfigMaps basura que dejan los charts de Elastic y bloquean la reinstalación
+# Borrar ConfigMaps basura que bloquean la reinstalación
 kubectl delete configmap kibana-kibana-helm-scripts -n monitoring --ignore-not-found || true
 kubectl delete configmap elasticsearch-master-helm-scripts -n monitoring --ignore-not-found || true
 echo -e "${GREEN}Limpieza terminada.${NC}"
@@ -58,13 +59,11 @@ helm upgrade --install elasticsearch elastic/elasticsearch \
 
 echo -e "${GREEN}Orden de instalación de Elasticsearch enviada.${NC}"
 
-# Pausa táctica para evitar sobrecarga antes de Kibana
-echo "⏳ Esperando 30s para estabilizar el cluster..."
+echo "Esperando 30s para estabilizar el cluster..."
 sleep 30
 
 # 5. Instalar Kibana (OFICIAL)
 echo -e "${GREEN}Instalando Kibana (Oficial)...${NC}"
-# Usamos --no-hooks para evitar que falle si Elastic aun no responde
 helm upgrade --install kibana elastic/kibana \
   --namespace monitoring \
   --set resources.requests.memory=256Mi \
@@ -75,11 +74,32 @@ helm upgrade --install kibana elastic/kibana \
 
 echo -e "${GREEN}Orden de instalación de Kibana enviada.${NC}"
 
-# 6. Instalar Filebeat (OFICIAL)
+# 6. Instalar Filebeat (OFICIAL) - FIX: Usando archivo de valores generado
+echo -e "${GREEN}Generando configuración de Filebeat...${NC}"
+
+# Creamos el archivo de configuración al vuelo para evitar errores de formato con --set
+cat <<'EOF' > filebeat-config-generated.yaml
+filebeatConfig:
+  filebeat.yml: |
+    filebeat.inputs:
+    - type: container
+      paths:
+        - /var/log/containers/*.log
+      processors:
+      - add_kubernetes_metadata:
+          host: ${NODE_NAME}
+          matchers:
+          - logs_path:
+              logs_path: "/var/log/containers/"
+    output.elasticsearch:
+      hosts: ["elasticsearch-master:9200"]
+      protocol: http
+EOF
+
 echo -e "${GREEN}Instalando Filebeat (Oficial)...${NC}"
 helm upgrade --install filebeat elastic/filebeat \
   --namespace monitoring \
-  --set daemonset.filebeatConfig.filebeat.yml.output.elasticsearch.hosts='["elasticsearch-master:9200"]' \
+  -f filebeat-config-generated.yaml \
   --timeout 10m
 
 echo -e "${GREEN}Orden de instalación de Filebeat enviada.${NC}"
